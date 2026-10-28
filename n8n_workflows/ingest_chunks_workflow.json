@@ -1,0 +1,141 @@
+{
+  "name": "Northstar \u2014 Supabase Chunk Ingestion API",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ingest-rag-chunks",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ing-webhook",
+      "name": "Webhook \u2014 Ingest Chunks",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        260
+      ],
+      "webhookId": "ingest-rag-chunks"
+    },
+    {
+      "parameters": {
+        "jsCode": "const incoming = $json.body ?? $json;\nconst chunks = Array.isArray(incoming.chunks) ? incoming.chunks : [incoming];\nif (!chunks.length) throw new Error('No chunks supplied');\nreturn chunks.map((c,i)=>{ const embedding=c.embedding; if(!c.chunk_id || !c.document_id || !c.text || !Array.isArray(embedding) || embedding.length!==768) throw new Error(`Chunk ${i} needs chunk_id, document_id, text, and 768-d embedding`); return {json:{id:c.chunk_id,document_id:c.document_id,source_file:c.source_file||'unknown',document_type:c.document_type||'unknown',quarter:c.quarter||null,document_date:c.document_date||null,speaker:c.speaker||null,section:c.section||null,page_or_timestamp:c.page_or_timestamp||null,tags:c.tags||[],synthetic:c.synthetic!==false,content:c.text,embedding}}; });"
+      },
+      "id": "ing-validate",
+      "name": "Validate and Map Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_PROJECT_REF.supabase.co/rest/v1/rag_documents?on_conflict=id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "REPLACE_WITH_SUPABASE_SERVICE_ROLE_KEY"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer REPLACE_WITH_SUPABASE_SERVICE_ROLE_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { id: $json.id, document_id: $json.document_id, source_file: $json.source_file, document_type: $json.document_type, quarter: $json.quarter, document_date: $json.document_date, speaker: $json.speaker, section: $json.section, page_or_timestamp: $json.page_or_timestamp, tags: $json.tags, synthetic: $json.synthetic, content: $json.content, embedding: '[' + $json.embedding.join(',') + ']' } }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "ing-insert",
+      "name": "Upsert Chunk \u2014 Supabase REST",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, message: 'Chunk upserted', id: $json.id || null } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "ing-respond",
+      "name": "Respond to Ingestion Caller",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        760,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook \u2014 Ingest Chunks": {
+      "main": [
+        [
+          {
+            "node": "Validate and Map Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate and Map Metadata": {
+      "main": [
+        [
+          {
+            "node": "Upsert Chunk \u2014 Supabase REST",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Chunk \u2014 Supabase REST": {
+      "main": [
+        [
+          {
+            "node": "Respond to Ingestion Caller",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "northstar-ingest-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
